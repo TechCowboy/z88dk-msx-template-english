@@ -67,7 +67,7 @@ cmake -DCMAKE_TOOLCHAIN_FILE=../cmake/z88dk.cmake ..
 make
 ```
 
-Verifiy
+Verify
 
 ```
 ls -laF ../dist/*.rom

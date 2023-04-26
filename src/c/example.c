@@ -16,14 +16,14 @@
 #define VRAM_HEIGHT 24
 #define VPOS(x, y)  (VRAM_START + VRAM_WIDTH * y + x)
 
-// chars.asm::_chars ラベルの参照(VRAM PCG 転送用)
+// chars.asm::_chars ラベルの参照 (For VRAM PCG transfers)
 extern unsigned char chars[];
-// 音楽・効果音のラベル参照（psgdriver.asm 用）
+// 音楽・Sound effect reference table（psgdriver.asm 用）
 extern uint8_t music_title[], music_main[], music_game_over[], sound_extend[], sound_get[];
-// サウンドステータス（ワークエリアから取得）
+// Sound Status (from work area) 
 extern uint8_t sounddrv_bgmwk[];
 
-// ゲームの状態遷移
+// game state translation
 typedef enum {
     TITLE_INIT,
     TITLE_ADVERTISE,
@@ -32,7 +32,7 @@ typedef enum {
     GAME_OVER
 } game_state_t;
 
-// ゲームの状態
+// game state
 typedef struct {
     game_state_t state;
     uint8_t remein_clear;
@@ -44,7 +44,7 @@ typedef struct {
 
 game_t game;
 
-// ボールの状態
+// ball state
 typedef struct {
     uint8_t x;
     uint8_t y;
@@ -54,7 +54,7 @@ typedef struct {
 
 ball_t ball;
 
-// タイトルアドバタイズデモの状態
+// state of advertising demo
 typedef struct {
     uint16_t y;
     int16_t vy;
@@ -65,7 +65,7 @@ typedef struct {
 title_t title;
 
 /**
- * vsync カウント待ち
+ * wait for vsync count
  */
 void wait_vsync(uint16_t count)
 {
@@ -75,29 +75,29 @@ void wait_vsync(uint16_t count)
 }
 
 /**
- * グラフィックス初期化
+ * graphics initialization
  */
 void init_graphics()
 {
-    // スクリーンモード
+    // screen mode set
     set_color(15, 1, 1);
     set_mangled_mode();
 
-    // スプライトモード
+    // sprite mode
     set_sprite_mode(sprite_default);
 
-    // キークリックスイッチ(OFF)
+    // key click switch (OFF)
     *(uint8_t *)MSX_CLIKSW = 0;
 
-    // 画面クリア
+    // clear screen
     fill(VRAM_START, VRAM_NONE, VRAM_WIDTH * VRAM_HEIGHT);
 
-    // PCG 設定(3面に同じデーターを転送)
+    // PCG 設定 (transfer same data 3 planes)
     vwrite(chars, 0x0000, 0x800);
     vwrite(chars, 0x0800, 0x800);
     vwrite(chars, 0x1000, 0x800);
 
-    // 色設定(0000|0000 = 前|背景)
+    // color setting (0000|0000 = front | background)
     set_char_color('=', 0x54, place_all);
     set_char_color('$', 0xa0, place_all);
     set_char_color('>', 0x6d, place_all);
@@ -105,7 +105,7 @@ void init_graphics()
 }
 
 /**
- * スコア等表示
+ * Display score etc.
  */
 void print_state()
 {
@@ -115,11 +115,11 @@ void print_state()
 }
 
 /**
- * タイトル表示及びアドバタイズデモ用初期化
+ * initialize title display and advertising demo
  */
 void title_init()
 {
-    // 画面クリア
+    // screen clear
     fill(VRAM_START, VRAM_NONE, VRAM_WIDTH * VRAM_HEIGHT);
 
     game.remein_clear = 0;
@@ -144,20 +144,22 @@ void title_init()
     title.tick = 0;
     title.vy = 1;
 
-    // サウンド再生
+    // play sound
     sounddrv_bgmplay(music_title);
 
-    // アドバタイズデモに遷移
+    // transition to advertising demo
     game.state = TITLE_ADVERTISE;
 }
 
 /**
- * タイトルアドバタイズデモ
+ * title advertising demo
  */
 void title_advertise(uint8_t trigger)
 {
-    // フレーム間先行入力
-    // ゲームオーバー後の連続入力無視のため最初の 30 tick は入力を受け付けない
+    // input ahead between frames
+    // No input for the first 30 ticks
+    // due to ignoring continous input after game over
+
     if(title.tick > 30 && trigger) {
         title.trigger_state = trigger;
     } else {
@@ -166,19 +168,21 @@ void title_advertise(uint8_t trigger)
 
     // HIT SPACE KEY
     if(title.trigger_state) {
-        // アドバタイズデモの経過 tick 数で乱数シードを初期化する
-        // ぽんぽん目押しで好きな面を狙える
+        // Progress of the advertising demo
+        // initialize the random number generator with
+        // the number of ticks inside the advertising demo
+        
         seed_rnd(title.tick);
-        // サウンド停止
+        // stop sound
         sounddrv_stop();
-        // ゲーム初期化に遷移
+        // transition to game initialization
         game.state = GAME_INIT;
     }
 
     // tick per 6
     if(title.tick++ % 6 != 0) return;
 
-    // ぽんぽん
+    // pom pom
     vpoke(VPOS(14, title.y), VRAM_NONE);
     if(title.y >= 9) title.vy = -1;
     if(title.y <= 6) title.vy = 1;
@@ -187,25 +191,25 @@ void title_advertise(uint8_t trigger)
 }
 
 /**
- * ゲーム（ボム及びゴールド配布）
+ * Game bombs and gold distribution
  */
 void game_randam_block(uint8_t count)
 {
-    // クリアまでの個数
+    // Number until clear
     game.remein_clear = 10;
     print_state();
 
-    // ゴールドと障害物
+    // Gold and obsticals
     for(uint8_t i = 0; i < count; i++) {
         uint8_t x = get_rnd() % 31 + 1;
         uint8_t y = get_rnd() % 21 + 1;
         uint16_t add = VPOS(x, y);
         if(vpeek(add) == VRAM_NONE || vpeek(add) == '>') {
             if(i % 3) {
-                // ゴールドはボムを潰せる
+                // Gold can crush bombs
                 vpoke(add, '$');
             } else {
-                // 自分の縦移動方向にはボムは配置しない
+                // Don't place bombs on your vertical direction
                 if(ball.x != x) {
                     vpoke(add, '>');
                 }
@@ -215,14 +219,14 @@ void game_randam_block(uint8_t count)
 }
 
 /**
- * ゲーム初期化
+ * game initialization
  */
 void game_init()
 {
-    // 画面クリア
+    // clear screen
     fill(VRAM_START, VRAM_NONE, VRAM_WIDTH * VRAM_HEIGHT);
 
-    // 壁
+    // wall
     fill(VPOS(0,  1) , '=', VRAM_WIDTH);
     fill(VPOS(0, 22), '=', VRAM_WIDTH);
     for(uint8_t y = 2; y < 22; y++) {
@@ -233,31 +237,31 @@ void game_init()
         }
     }
 
-    // ボール（下から上へ）
+    // ball (bottom to top)
     ball.x = 2;
     ball.y = 6;
     ball.vy = -1;
 
-    // 初期ゴールドとボム生成
+    // initial bomb and gold distribution
     game_randam_block(40);
 
-    // ステートクリア
+    // clear state
     ball.tick = 0;
     game.score = 0;
     game.stick_state = 0;
 
-    // ステート表示
+    // display state
     print_state();
 
-    // サウンドステータス初期化
+    // sound status initializatoin
     game.sound_play = 0;
 
-    // ゲームに遷移
+    // transition to game
     game.state = GAME_MAIN;
 }
 
 /**
- * ゲームオーバー
+ * Game Over
  */
 void game_over(uint8_t trigger)
 {
@@ -269,13 +273,13 @@ void game_over(uint8_t trigger)
 
     // HIT SPACE KEY
     if(trigger) {
-        // タイトルに遷移
+        // transition to title
         game.state = TITLE_INIT;
     }
 }
 
 /**
- * ゲームメイン
+ * Game main
  */
 void game_main(uint8_t stick)
 {
@@ -283,91 +287,91 @@ void game_main(uint8_t stick)
     uint8_t ball_next_y;
     int8_t ball_vx = 0;
 
-    // フレーム間先行入力
+    // input ahead between frames
     if(stick & st_left || stick & st_right) {
         game.stick_state = stick;
     }
 
-    // ファンファーレ再生終わり検知
+    // fanfare playback and detection
     if(game.sound_play == 2 && (sounddrv_bgmwk[3] + sounddrv_bgmwk[4]) == 0) {
         game.sound_play = 0;
     }
-    // メインミュージック再生
+    // play main music
     if(game.sound_play == 0) {
         sounddrv_bgmplay(music_main);
-        // メインミュージック再生中
+        // main music playing
         game.sound_play = 1;
     }
 
     // tick per 6
     if(ball.tick++ % 6 != 0) return;
 
-    // ボール移動先算出
+    // ball destination calculation
     ball_next_y = ball.y + ball.vy;
     if(ball.x > 1 && game.stick_state & st_left) ball_vx = -1;
     if(ball.x < 30 && game.stick_state & st_right) ball_vx += 1;
     ball_next_x = ball.x + ball_vx;
 
-    // 判定
+    // Judgement
     uint8_t next_block = vpeek(VPOS(ball_next_x, ball_next_y));
     if(next_block == '=') {
-        // 壁反射（ボール的 1 tick 縦移動を停止させる。アイテム破壊猶予）
+        // wall reflection (stops ball-like 1 tick Stop vertical movement destruction grace period)
         ball_next_y = ball_next_y - ball.vy;
         ball.vy = ball.vy * -1;
     } else if(next_block == '$') {
-        // 効果音再生
+        // play sound effect
         sounddrv_sfxplay(sound_get);
-        // ゴールド取得
+        // get gold
         game.score += 10;
         if(game.score > game.score_hi) {
             game.score_hi = game.score;
         }
         game.remein_clear--;
         print_state();
-        // ネクストステージ
+        // next stage
         if(game.remein_clear <= 0) {
-            // ファンファーレ再生中
+            // playing fanfare
             game.sound_play = 2;
-            // ファンファーレ再生
+            // play fanfare
             sounddrv_bgmplay(sound_extend);
-            // ボム・ゴールド追加
+            // add bomb and gold
             game_randam_block(20);
         }
     } else if(next_block == '>') {
-        // ボム激突
-        // サウンド停止
+        // bomb clash
+        // stop sound
         sounddrv_stop();
-        // サウンド再生
+        // play sound
         sounddrv_bgmplay(music_game_over);
-        // ゲームオーバーに遷移
+        // transition to game over
         game.state = GAME_OVER;
     }
 
-    // ボールクリア
+    // ball clear
     vpoke(VPOS(ball.x, ball.y), VRAM_NONE);
-    // ボール表示
+    // ball display
     vpoke(VPOS(ball_next_x, ball_next_y), '?');
 
-    // アップデート
+    // update
     ball.x = ball_next_x;
     ball.y = ball_next_y;
 
-    // フレーム間先行入力クリア
+    // clear input ahead between frames
     game.stick_state = 0;
 }
 
 /**
- * ゲームループ及び状態遷移
+ * game loop and state transition
  */
 void loop()
 {
     while(1) {
         // vsync wait
         wait_vsync(1);
-        // 入力取得
+        // get input
         uint8_t stick = st_dir[get_stick(0)];
         uint8_t trigger = get_trigger(0);
-        // ゲーム
+        // game
         switch(game.state) {
             case TITLE_INIT:
                 title_init();
@@ -391,18 +395,19 @@ void loop()
 }
 
 /**
- * メイン
+ * Main
  */
 void main()
 {
-    // 画面初期化
+    // screen initialization
     init_graphics();
 
-    // サウンドドライバー初期化
+    // initialize sound driver
     sounddrv_init();
-    // サウンドドライバーフック設定
-    // __INTELLISENSE__ 判定は vscode で非標準インラインアセンブル構文をエラーにしないように挿入
-    #ifndef __INTELLISENSE__
+    // sound driver hook settings
+    // __INTELLISENSE__ prevent error from non-standard assembly language in vscode
+
+#ifndef __INTELLISENSE__
     __asm
     DI
     __endasm;
@@ -418,7 +423,7 @@ void main()
     __endasm;
     #endif
 
-    // ゲームステート初期化
+    // initialize game state
     game.state = TITLE_INIT;
     game.score_hi = 300;
 
